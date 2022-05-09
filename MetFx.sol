@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity 0.8.11;
+pragma solidity 0.8.13;
 
 /**
  * @dev Library for managing
@@ -906,7 +906,6 @@ contract Ownable is IOwnable {
 contract VaultOwned is Ownable {
     
   address internal _vault;
-  address internal _vested;
 
   function setVault( address vault_ ) external onlyOwner() returns ( bool ) {
     _vault = vault_;
@@ -914,22 +913,12 @@ contract VaultOwned is Ownable {
     return true;
   }
 
-  function setVested(address vested_) external onlyOwner() returns (bool) {
-      _vested = vested_;
-
-      return true;
-  }
-
   function vault() public view returns (address) {
     return _vault;
   }
 
-  function vested() public view returns(address) {
-      return _vested;
-  }
-
-  modifier onlyVaultOrVested() {
-    require( _vault == msg.sender || _vested == msg.sender, "VaultOwnedOrVested: caller is not the Vault or Vested" );
+  modifier onlyVault() {
+    require( _vault == msg.sender, "Alert: caller is not the Vault!" );
     _;
   }
 
@@ -1192,8 +1181,9 @@ contract MetFlix is ERC20, VaultOwned {
     address public treasureChestWallet;
 
     uint256 public circulatingSupply;
-    uint256 public maxSupply;
     uint256 public totalSupply;
+    uint256 public maxSupply;
+    uint256 public burnedSupply;
     
     uint256 public maxTransactionAmount;
     uint256 public swapTokensAtAmount;
@@ -1260,6 +1250,7 @@ contract MetFlix is ERC20, VaultOwned {
     event developmentWalletUpdated(address indexed newWallet, address indexed oldWallet);
     event treasureChestWalletUpdated(address indexed newWallet, address indexed oldWallet);
     event TokensMinted(address account, uint256 amount);
+    event TokensBurned(uint256 amount);
     event SwapAndLiquify(
         uint256 tokensSwapped,
         uint256 ethReceived,
@@ -1289,9 +1280,9 @@ contract MetFlix is ERC20, VaultOwned {
         uint256 _sellLiquidityFee = 3;
         uint256 _sellTreasureChestFee = 1;
         
-        circulatingSupply = 600000 * 1e18;
+        circulatingSupply = 15307825 * 1e18;
         totalSupply += circulatingSupply;
-        maxSupply = 100 * 1e6 * 1e18; // 100 million is the max Supply that can be ever minted
+        maxSupply = 1 * 1e9 * 1e18; // 1 Billion is the max Supply that can be ever minted
 
         maxTransactionAmount = totalSupply * 5 / 1000; // 0.5% of the circulating supply
         maxWallet = totalSupply * 1 / 100; // 1% of the circulating supply
@@ -1341,15 +1332,31 @@ contract MetFlix is ERC20, VaultOwned {
 
   	}
 
-    function mint(address account_, uint256 amount_) external onlyVaultOrVested() {
-        require(circulatingSupply + amount_ <= maxSupply, "Error: Can't mint more than maxSupply");
-        if(msg.sender == _vested || msg.sender == _vault)
+    //tokens to be minted for distribution as per the vesting schedule. Maximum tokens that can be ever minted is 1 Billion.
+    function mint(address account_, uint256 amount_) external onlyVault() {
+        require(circulatingSupply + burnedSupply + amount_ <= maxSupply, "Error: Can't mint more than Max Supply!");
+        require(amount_ <= totalSupply * 22 / 10000, "Alert! Can only mint 0.22% of max supply at once.");
+        if(msg.sender == _vault)
         _mint(account_, amount_);
 
         circulatingSupply += amount_;
         totalSupply += amount_;
 
         emit TokensMinted(account_, amount_);
+    }
+
+    function burn(uint256 amount_) external {
+        require(balanceOf(msg.sender) > 0, "Error: Your balance is zero!");
+
+        if(balanceOf(msg.sender) > 0)
+        _burn(msg.sender, amount_);
+
+        circulatingSupply -= amount_;
+        _balances[deadAddress] += amount_;
+        totalSupply -= amount_;
+        burnedSupply += amount_;
+
+        emit TokensBurned(amount_);
     }
 
     function decreaseTax(uint256 percent, uint256 perBlock, uint256 limit) external onlyOwner {
