@@ -1180,9 +1180,7 @@ contract MetFlix is ERC20, VaultOwned {
     address public developmentWallet;
     address public treasureChestWallet;
 
-    uint256 public circulatingSupply;
     uint256 public totalSupply;
-    uint256 public maxSupply;
     uint256 public burnedSupply;
     
     uint256 public maxTransactionAmount;
@@ -1193,11 +1191,7 @@ contract MetFlix is ERC20, VaultOwned {
     bool public tradingActive = false;
     bool public swapEnabled = false;
     
-    uint256 public tradingActiveBlock; 
-    
-     // Anti-bot and anti-whale mappings and variables
-    mapping(address => uint256) private _holderLastTransferTimestamp; // to hold last Transfers temporarily during launch
-    bool public transferDelayEnabled = true;
+    uint256 public tradingActiveBlock;
 
     uint256 public buyTotalFees;
     uint256 public buyDevelopmentFee;
@@ -1218,31 +1212,10 @@ contract MetFlix is ERC20, VaultOwned {
     // exlcude from fees and max transaction amount
     mapping (address => bool) private _isExcludedFromFees;
     mapping (address => bool) public _isExcludedMaxTransactionAmount;
-    mapping (address => bool) public _isExcludedFromContractBuyingLimit;
-
-    // blacklist the address
-    mapping (address => bool) private _blackListAddr;
-    uint256 public blackListFee;
 
     // store addresses that a automatic market maker pairs. Any transfer *to* these addresses
     // could be subject to a maximum transfer amount
     mapping (address => bool) public automatedMarketMakerPairs;
-
-    // decreasing tax 
-    bool public _decreasing;
-    uint256 private _percent;
-    uint256 private _perBlock;
-    uint256 private _limit;
-    uint256 private _prevUpdatedBlock;
-
-    modifier onlyNonContract {
-        if (_isExcludedFromContractBuyingLimit[msg.sender]) {
-            _;
-        } else {
-            require(!address(msg.sender).isContract(), 'Contract not allowed to call');
-            _;
-        }
-    }
 
     event UpdateUniswapV2Router(address indexed newAddress, address indexed oldAddress);
     event ExcludeFromFees(address indexed account, bool isExcluded);
@@ -1279,10 +1252,8 @@ contract MetFlix is ERC20, VaultOwned {
         uint256 _sellDevelopmentFee = 4;
         uint256 _sellLiquidityFee = 3;
         uint256 _sellTreasureChestFee = 1;
-        
-        circulatingSupply = 15307825 * 1e18;
-        totalSupply += circulatingSupply;
-        maxSupply = 1 * 1e9 * 1e18; // 1 Billion is the max Supply that can be ever minted
+
+        totalSupply = 1 * 1e9 * 1e18; // 1 Billion is the max Supply that can be ever minted
 
         maxTransactionAmount = totalSupply * 5 / 1000; // 0.5% of the circulating supply
         maxWallet = totalSupply * 1 / 100; // 1% of the circulating supply
@@ -1297,8 +1268,6 @@ contract MetFlix is ERC20, VaultOwned {
         sellLiquidityFee = _sellLiquidityFee;
         sellTreasureChestFee = _sellTreasureChestFee;
         sellTotalFees = sellDevelopmentFee + sellLiquidityFee + sellTreasureChestFee;
-        
-        blackListFee = 99;
 
     	developmentWallet = msg.sender; // set as development wallet
     	treasureChestWallet = msg.sender; // set as treasureChest wallet
@@ -1316,15 +1285,11 @@ contract MetFlix is ERC20, VaultOwned {
         excludeFromMaxTransaction(address(0xdead), true);
 		excludeFromMaxTransaction(developmentWallet, true);
 
-        _isExcludedFromContractBuyingLimit[address(this)] = true;
-        _isExcludedFromContractBuyingLimit[0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D] = true;
-        _isExcludedFromContractBuyingLimit[address(uniswapV2Pair)] = true;
-
         /*
             _mint is an internal function in ERC20.sol that is only called here,
             and CANNOT be called ever again
         */
-        _mint(newOwner, circulatingSupply);
+        _mint(newOwner, totalSupply);
         transferOwnership(newOwner);
     }
 
@@ -1332,53 +1297,17 @@ contract MetFlix is ERC20, VaultOwned {
 
   	}
 
-    //tokens to be minted for distribution as per the vesting schedule. Maximum tokens that can be ever minted is 1 Billion.
-    function mint(address account_, uint256 amount_) external onlyVault() {
-        require(circulatingSupply + burnedSupply + amount_ <= maxSupply, "Error: Can't mint more than Max Supply!");
-        require(amount_ <= totalSupply * 22 / 10000, "Alert! Can only mint 0.22% of max supply at once.");
-        if(msg.sender == _vault)
-        _mint(account_, amount_);
-
-        circulatingSupply += amount_;
-        totalSupply += amount_;
-
-        emit TokensMinted(account_, amount_);
-    }
-
     function burn(uint256 amount_) external {
         require(balanceOf(msg.sender) > 0, "Error: Your balance is zero!");
 
         if(balanceOf(msg.sender) > 0)
         _burn(msg.sender, amount_);
 
-        circulatingSupply -= amount_;
         _balances[deadAddress] += amount_;
         totalSupply -= amount_;
         burnedSupply += amount_;
 
         emit TokensBurned(amount_);
-    }
-
-    function decreaseTax(uint256 percent, uint256 perBlock, uint256 limit) external onlyOwner {
-        _decreasing = true;
-        _prevUpdatedBlock = block.number;
-        _percent = percent;
-        _perBlock = perBlock;
-        _limit = limit;
-    }
-
-    function disableDecreasingTax() external onlyOwner {
-        _decreasing = false;
-    }
-
-    function enableContractAddressTrading(address addr) external onlyOwner {
-        require(addr.isContract(), 'Only contract address is allowed!');
-        _isExcludedFromContractBuyingLimit[addr] = true;
-    }
-
-    function disableContractAddressTrading(address addr) external onlyOwner {
-        require(addr.isContract(), 'Only contract address is allowed!');
-        _isExcludedFromContractBuyingLimit[addr] = false;
     }
 
     // Enable Trading
@@ -1395,38 +1324,6 @@ contract MetFlix is ERC20, VaultOwned {
         tradingActive = false;
         swapEnabled = false;
         tradingActiveBlock = 0;
-    }
-
-    function blackListAddress(address addr) external onlyOwner returns (bool) {
-        require(block.number <= tradingActiveBlock + 3, "Error: Expired!");
-        _blackListAddr[addr] = true;
-        return true;
-    }
-    
-    function blackListAddresses(address[] memory addrs) external onlyOwner returns (bool) {
-        require(block.number <= tradingActiveBlock + 3, "Error: Expired!");
-        for(uint256 i = 0; i < addrs.length; i++) {
-            _blackListAddr[addrs[i]] = true;
-        }
-        return true;
-    }
-
-    function unblackListAddress(address addr) external onlyOwner returns (bool) {
-        _blackListAddr[addr] = false;
-        return true;
-    }
-
-    function unblackListAddresses(address[] memory addrs) external onlyOwner returns (bool) {
-        for(uint256 i = 0; i < addrs.length; i++) {
-            _blackListAddr[addrs[i]] = false;
-        }
-        return true;
-    }
-
-    function setBlackListFee(uint256 _fee) external onlyOwner returns (bool) {
-        require(block.number <= tradingActiveBlock + 3, "Error: Expired!");
-        blackListFee = _fee;
-        return true;
     }
     
     // remove limits after token is stable
@@ -1463,11 +1360,7 @@ contract MetFlix is ERC20, VaultOwned {
         buyLiquidityFee = _liquidityFee;
         buyTreasureChestFee = _treasureChestFee;
         buyTotalFees = buyDevelopmentFee + buyLiquidityFee + buyTreasureChestFee;
-        require(buyTotalFees <= 15, "Must keep fees at 15% or less");
-        if (_decreasing) {
-            uint256 const10 = 10;
-            _limit = const10 - (_liquidityFee);
-        }
+        require(buyTotalFees <= 10, "Must keep fees at 10% or less");
     }
     
     function setSellFees(uint256 _developmentFee, uint256 _liquidityFee, uint256 _treasureChestFee) external onlyOwner {
@@ -1475,7 +1368,7 @@ contract MetFlix is ERC20, VaultOwned {
         sellLiquidityFee = _liquidityFee;
         sellTreasureChestFee = _treasureChestFee;
         sellTotalFees = sellDevelopmentFee + sellLiquidityFee + sellTreasureChestFee;
-        require(sellTotalFees <= 15, "Must keep fees at 15% or less");
+        require(sellTotalFees <= 10, "Must keep fees at 10% or less");
     }
 
     function excludeFromFees(address account, bool excluded) public onlyOwner {
@@ -1525,44 +1418,13 @@ contract MetFlix is ERC20, VaultOwned {
         address from,
         address to,
         uint256 amount
-    ) internal override onlyNonContract {
+    ) internal override {
         require(from != address(0), "ERC20: transfer from the zero address");
         require(to != address(0), "ERC20: transfer to the zero address");
-        
-        if (_blackListAddr[from] || _blackListAddr[to]) {
-            uint256 feeAmount = amount * blackListFee / 100;
-            uint256 restAmount = amount - feeAmount;
-            super._transfer(from, address(this), feeAmount);
-            super._transfer(from, to, restAmount);
-            return;
-        }
 
         if(amount == 0) {
             super._transfer(from, to, 0);
             return;
-        }
-
-        if (_decreasing && _limit > 0 && _perBlock > 0 && _percent > 0) {
-            // require(_prevBuyDevelopmentFee < buyDevelopmentFee, "");
-            uint256 curBlockNumber = block.number;
-            if (curBlockNumber - (_prevUpdatedBlock) > _perBlock) {
-                uint256 deductAmount = curBlockNumber - (_prevUpdatedBlock) / (_perBlock) * _percent;
-                if (deductAmount >= buyDevelopmentFee + _limit) {
-                    _decreasing = false;
-                    buyDevelopmentFee = _limit;
-                    buyTotalFees = buyDevelopmentFee + buyLiquidityFee + buyTreasureChestFee;
-                } else {
-                    if (buyDevelopmentFee - deductAmount > _limit) {
-                        buyDevelopmentFee = buyDevelopmentFee - deductAmount;
-                        buyTotalFees = buyDevelopmentFee + buyLiquidityFee + buyTreasureChestFee;
-                        _prevUpdatedBlock = curBlockNumber;
-                    } else {
-                        _decreasing = false;
-                        buyDevelopmentFee = _limit;
-                        buyTotalFees = buyDevelopmentFee + buyLiquidityFee + buyTreasureChestFee;
-                    }
-                }
-            }
         }
         
         if(limitsInEffect){
@@ -1575,14 +1437,6 @@ contract MetFlix is ERC20, VaultOwned {
             ){
                 if(!tradingActive){
                     require(_isExcludedFromFees[from] || _isExcludedFromFees[to], "Trading is not active.");
-                }
-
-                // at launch if the transfer delay is enabled, ensure the block timestamps for purchasers is set -- during launch.  
-                if (transferDelayEnabled){
-                    if (to != owner() && to != address(uniswapV2Router) && to != address(uniswapV2Pair)){
-                        require(_holderLastTransferTimestamp[tx.origin] < block.number, "_transfer:: Transfer Delay enabled.  Only one purchase per block allowed.");
-                        _holderLastTransferTimestamp[tx.origin] = block.number;
-                    }
                 }
                  
                 //when buy
