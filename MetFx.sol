@@ -180,7 +180,7 @@ contract MetFx is IBEP20, Auth {
     uint256 public liquidityFee    = 3;
     uint256 public treasuryFee     = 1;
     uint256 public developmentFee  = 4;
-    uint256 public burnFee         = 1;
+    uint256 public burnFee         = 0;
     uint256 public totalFee        = developmentFee + liquidityFee + treasuryFee + burnFee;
     uint256 public feeDenominator  = 100;
 
