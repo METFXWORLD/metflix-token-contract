@@ -176,7 +176,6 @@ contract MetFx is IBEP20, Auth {
     mapping (address => bool) isFeeExempt;
     mapping (address => bool) isTxLimitExempt;
     mapping (address => bool) isTimelockExempt;
-    mapping (address => bool) isDividendExempt;
 
     uint256 public liquidityFee    = 3;
     uint256 public treasuryFee     = 1;
