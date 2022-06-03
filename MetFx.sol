@@ -550,26 +550,6 @@ contract Ownable is IOwnable {
   }
 }
 
-contract VaultOwned is Ownable {
-    
-  address internal _vault;
-
-  function setVault( address vault_ ) external onlyOwner() returns ( bool ) {
-    _vault = vault_;
-
-    return true;
-  }
-
-  function vault() public view returns (address) {
-    return _vault;
-  }
-
-  modifier onlyVault() {
-    require( _vault == msg.sender, "Alert: caller is not the Vault!" );
-    _;
-  }
-
-}
 
 interface IUniswapV2Factory {
     event PairCreated(address indexed token0, address indexed token1, address pair, uint);
@@ -814,7 +794,7 @@ library SafeERC20 {
     }
 }
 
-contract MetFlix is ERC20, VaultOwned {
+contract MetFlix is ERC20, Ownable {
     using SafeERC20 for IERC20;
     using Address for address;
 
